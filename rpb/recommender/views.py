@@ -43,9 +43,9 @@ def LoginView(request):
             new_session=Session(user=user.id,session_id=session_id)
             new_session.save()
             return HttpResponse(new_session.to_json(),status=200)
-        except User.DoesNotExist:
-            print('not good')
-            return HttpResponse(status=400,reason='Invalid username or password')
+        except Exception as e:
+            print(e)
+            return HttpResponse(e,status=400)
 
 def RegisterView(request):
     if request.method == 'POST':
@@ -61,4 +61,4 @@ def RegisterView(request):
             return HttpResponse(new_session.to_json(),status=200)
         except  ValidationError as e:
             print(e)
-            return HttpResponse(status=400,reason='Bad username, already registered.')
+            return HttpResponse(e,status=400)
