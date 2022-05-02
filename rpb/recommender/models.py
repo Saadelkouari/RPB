@@ -35,10 +35,11 @@ class User(Document):
     sexe=StringField(max_length=1,choice=SEXES)
     genres=ListField()
 
-
+class History(EmbeddedDocument):
+    date=DateTimeField(required=True,default=datetime.now())
+    times=IntField(required=True,default=0)
 
 class Mapping(Document):
     user_mapping=DictField()
     book_mapping=DictField()
-    times_used=IntField(default=0,required=True)
-    date=DateField()
+    history=ListField(EmbeddedDocumentField(History))

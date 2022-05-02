@@ -42,14 +42,14 @@ def train():
         temp.append(float(list(list(elm.values())[1].values())[1]))    
         interactions.append(temp)
     mappings=Mapping.objects.first()
-    dt=datetime.today()
-    date=mappings.date
-    if date is None: 
-        mappings.date=datetime.utcnow()
-        mappings.times_used=1 
-    elif date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
-        mappings.times_used=1
-    else: mappings.times_used+=1
+    history=mappings.history
+    if len(history): 
+        last_history=history[-1]
+        dt=datetime.now()
+        date=last_history.date
+    if len(history)==0 or date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
+        history.append(History())
+    else: last_history.times_used+=1
     (interactions,weights)=data.build_interactions(interactions)
     mappings.user_mapping,r,mappings.book_mapping,q,=data.mapping()
     mappings.save()
@@ -160,7 +160,7 @@ def update_rating(request):
 def get_times_suggestions_used(request):
     if request.method == 'GET':
         mapping=Mapping.objects.first()
-        return HttpResponse(dumps({"times":mapping.times_used}),status=200)
+        return HttpResponse(dumps({"history":[h.to_mongo().to_dict() for h in mapping.history]}),status=200)
 
 def remove_rating(request):
     if request.method == 'POST':
