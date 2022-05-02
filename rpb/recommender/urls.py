@@ -11,4 +11,5 @@ urlpatterns =[
     path('books',views.getBooks),
     path('mostread',views.getMostRead),
     path('user/suggestions',views.get_suggestions),
+    path('times_used',views.get_times_suggestions_used),
 ]

@@ -42,6 +42,14 @@ def train():
         temp.append(float(list(list(elm.values())[1].values())[1]))    
         interactions.append(temp)
     mappings=Mapping.objects.first()
+    dt=datetime.today()
+    date=mappings.date
+    if date is None: 
+        mappings.date=datetime.utcnow()
+        mappings.times_used=1 
+    elif date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
+        mappings.times_used=1
+    else: mappings.times_used+=1
     (interactions,weights)=data.build_interactions(interactions)
     mappings.user_mapping,r,mappings.book_mapping,q,=data.mapping()
     mappings.save()
@@ -149,6 +157,11 @@ def update_rating(request):
             return HttpResponse("rating added",status=200)
         return HttpResponse("Book wasn't added to user rating.",status=400)
 
+def get_times_suggestions_used(request):
+    if request.method == 'GET':
+        mapping=Mapping.objects.first()
+        return HttpResponse(dumps({"times":mapping.times_used}),status=200)
+
 def remove_rating(request):
     if request.method == 'POST':
         user=is_authenticated(request)
@@ -250,7 +263,7 @@ def RegisterView(request):
         sexe=request.POST.get('sexe')
         genres=request.POST.get('genres')
         try:
-            user = User(username=username, password=password, email=email,birthday=birthday,sexe=sexe,genres=genres)
+            user = User(username=username, password=password,email=email,birthday=birthday,sexe=sexe,genres=genres)
             session_id=blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
             user.session=Session(session_id=session_id)
             user.save()

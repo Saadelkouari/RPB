@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from email.policy import default
 from mongoengine import *
 from numpy import require
 # Create your models here.
@@ -39,3 +40,5 @@ class User(Document):
 class Mapping(Document):
     user_mapping=DictField()
     book_mapping=DictField()
+    times_used=IntField(default=0,required=True)
+    date=DateField()
