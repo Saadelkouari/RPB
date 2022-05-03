@@ -7,19 +7,18 @@ from django.urls import reverse
 from mongoengine import connect, ValidationError
 from .models import *
 from datetime import datetime
-import secrets
 import json
 from lightfm import LightFM
 from lightfm.data import Dataset
 from blake3 import blake3
 import numpy as np
 from bson.json_util import dumps, loads
-import random
 from libgen_api import LibgenSearch
 from bs4 import BeautifulSoup
 import requests
-from collections import ChainMap
 from bson.objectid import ObjectId
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 # Create your views here.
 connect(db='rpb_d')
 
@@ -56,7 +55,24 @@ def train():
     model.fit(interactions,sample_weight=weights)
     return data,model
 
-    
+class Cluster():
+    @classmethod
+    def fit(cls):
+
+        cls.users = User.objects.all()
+        cls.books = Book.objects.all()
+        model_input=[]
+        for user in cls.users:
+            user_books=[rating.ID.id for rating in user.ratings]
+            model_input.append([int(book.id in user_books) for book in cls.books])
+        cls.pca=PCA(n_components=2).fit(model_input)
+        cls.kmeans = KMeans(n_clusters=3, random_state=0).fit(cls.pca.transform(model_input))
+    @classmethod
+    def label(cls,user):
+        user_books=[rating.ID.id for rating in user.ratings]
+        x=[int(book.id in user_books) for book in cls.books]
+        return cls.kmeans.predict(cls.pca.transform([x]))
+        
 def predict(user):
     data,model=train()
     mappings=Mapping.objects.first()
@@ -101,6 +117,23 @@ def printreq(req):
         req.body,
     ))
 
+def get_messages(request):
+    if request.method == 'GET':
+        user=is_authenticated(request)
+        if user is not None: return HttpResponse("Session expired.",status=440)
+
+def set_message(request):
+    if request.method == 'POST':
+        user=is_authenticated(request)
+        if user is None: return HttpResponse('Session expired.',status=440)
+        chat_label=request.method.get('chat')
+        try:
+            chat=Chat.objects.get(__raw__={"chat_label":chat_label})
+            message=request.POST.get('message')
+            chat.messages.append(Message(value=message,sender=user.id))
+        except Exception as e:
+            print(e)
+            return HttpResponse(e,status=400)
 
 
 def save_books(rating):
