@@ -48,7 +48,7 @@ def train():
         date=last_history.date
     if len(history)==0 or date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
         history.append(History())
-    else: last_history.times_used+=1
+    else: last_history.times+=1
     (interactions,weights)=data.build_interactions(interactions)
     mappings.user_mapping,r,mappings.book_mapping,q,=data.mapping()
     mappings.save()
@@ -67,6 +67,7 @@ class Cluster():
             model_input.append([int(book.id in user_books) for book in cls.books])
         cls.pca=PCA(n_components=2).fit(model_input)
         cls.kmeans = KMeans(n_clusters=3, random_state=0).fit(cls.pca.transform(model_input))
+        return True
     @classmethod
     def label(cls,user):
         user_books=[rating.ID.id for rating in user.ratings]
@@ -109,31 +110,8 @@ def search_books(name,id=None):
     r['image']="http://library.lol/"+img
     return r
 
-def printreq(req):
-    print('{}\n{}\r\n{}\r\n\r\n{}'.format(
-        '-----------START-----------',
-        req.method + ' ' ,
-        '\r\n'.join('{}: {}'.format(k, v) for k, v in req.headers.items()),
-        req.body,
-    ))
-
-def get_messages(request):
-    if request.method == 'GET':
-        user=is_authenticated(request)
-        if user is not None: return HttpResponse("Session expired.",status=440)
-
-def set_message(request):
-    if request.method == 'POST':
-        user=is_authenticated(request)
-        if user is None: return HttpResponse('Session expired.',status=440)
-        chat_label=request.method.get('chat')
-        try:
-            chat=Chat.objects.get(__raw__={"chat_label":chat_label})
-            message=request.POST.get('message')
-            chat.messages.append(Message(value=message,sender=user.id))
-        except Exception as e:
-            print(e)
-            return HttpResponse(e,status=400)
+def generate_session_id(user):
+    return blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
 
 
 def save_books(rating):
@@ -149,9 +127,6 @@ def save_books(rating):
         book.save()
         book.reload()
         return book
-
-
-
 
 def is_authenticated(request):
     try:
@@ -188,21 +163,13 @@ def update_rating(request):
                 user.ratings.append(Rating.from_json(dumps({'ID':book.id,'rating':float(rating)})))
                 user.save()
             return HttpResponse("rating added",status=200)
-        return HttpResponse("Book wasn't added to user rating.",status=400)
+        return HttpResponse("rating wasn't added.",status=400)
 
 def get_times_suggestions_used(request):
     if request.method == 'GET':
         mapping=Mapping.objects.first()
         return HttpResponse(dumps({"history":[h.to_mongo().to_dict() for h in mapping.history]}),status=200)
 
-def remove_rating(request):
-    if request.method == 'POST':
-        user=is_authenticated(request)
-        book=request.POST.get('id')
-        if user==None: return HttpResponse("Session timed out.",status=440)
-        if book:
-
-            return HttpResponse("Book removed from user ratings",status=200)
 
 
 def getBooks(request):
@@ -276,7 +243,7 @@ def LoginView(request):
         password = request.POST.get('password')
         try:
             user=User.objects.get( __raw__= {'username':username,'password':password} )
-            session_id=blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
+            session_id=generate_session_id(user)
             user.session=Session(session_id=session_id)
             user.birthday=datetime.now()
             user.save()
@@ -296,8 +263,8 @@ def RegisterView(request):
         sexe=request.POST.get('sexe')
         genres=request.POST.get('genres')
         try:
-            user = User(username=username, password=password,email=email,birthday=birthday,sexe=sexe,genres=genres)
-            session_id=blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
+            user = User(username=username,first_name=first_name,last_name=last_name, password=password,email=email,birthday=birthday,sexe=sexe,genres=genres)
+            session_id=generate_session_id(user)
             user.session=Session(session_id=session_id)
             user.save()
             return HttpResponse(user.session.to_json(),status=200)
