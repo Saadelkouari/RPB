@@ -45,7 +45,9 @@ def train():
     if len(history): 
         last_history=history[-1]
         dt=datetime.now()
-        date=last_history.date
+        date=datetime. strptime(last_history.date[:10],'%Y-%m-%d')
+        print("dt",type(dt))
+        print("date",type(date))
     if len(history)==0 or date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
         history.append(History())
     else: last_history.times+=1
@@ -102,6 +104,7 @@ def search_books(name,id=None):
             img=soup.findAll('img')[0].get('src')
             r['image']="http://library.lol/"+img
         return results
+    print("name which's query:",name)
     r=s.search_title_filtered(name,{"ID":id})[0]
     r['query']=name
     page = requests.get(r['Mirror_1'])
@@ -210,6 +213,7 @@ def getUser(request):
         user=is_authenticated(request)
         if user is None: return HttpResponse('session expired',status=440)
         else:
+            print(request.POST.keys())
             for key in User._fields.keys():
                 if request.POST.get(key) is not None:
                     user[key]=request.POST[key]
