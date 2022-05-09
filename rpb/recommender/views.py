@@ -7,19 +7,18 @@ from django.urls import reverse
 from mongoengine import connect, ValidationError
 from .models import *
 from datetime import datetime
-import secrets
 import json
 from lightfm import LightFM
 from lightfm.data import Dataset
 from blake3 import blake3
 import numpy as np
 from bson.json_util import dumps, loads
-import random
 from libgen_api import LibgenSearch
 from bs4 import BeautifulSoup
 import requests
-from collections import ChainMap
 from bson.objectid import ObjectId
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 # Create your views here.
 connect(db='rpb_d')
 
@@ -46,17 +45,37 @@ def train():
     if len(history): 
         last_history=history[-1]
         dt=datetime.now()
-        date=last_history.date
+        date=datetime. strptime(last_history.date[:10],'%Y-%m-%d')
+        print("dt",type(dt))
+        print("date",type(date))
     if len(history)==0 or date.day!=dt.day or date.month!=dt.month or date.year!=dt.year:
         history.append(History())
-    else: last_history.times_used+=1
+    else: last_history.times+=1
     (interactions,weights)=data.build_interactions(interactions)
     mappings.user_mapping,r,mappings.book_mapping,q,=data.mapping()
     mappings.save()
     model.fit(interactions,sample_weight=weights)
     return data,model
 
-    
+class Cluster():
+    @classmethod
+    def fit(cls):
+
+        cls.users = User.objects.all()
+        cls.books = Book.objects.all()
+        model_input=[]
+        for user in cls.users:
+            user_books=[rating.ID.id for rating in user.ratings]
+            model_input.append([int(book.id in user_books) for book in cls.books])
+        cls.pca=PCA(n_components=2).fit(model_input)
+        cls.kmeans = KMeans(n_clusters=3, random_state=0).fit(cls.pca.transform(model_input))
+        return True
+    @classmethod
+    def label(cls,user):
+        user_books=[rating.ID.id for rating in user.ratings]
+        x=[int(book.id in user_books) for book in cls.books]
+        return cls.kmeans.predict(cls.pca.transform([x]))
+
 def predict(user):
     data,model=train()
     mappings=Mapping.objects.first()
@@ -73,7 +92,7 @@ def predict(user):
     pred_books=[ ObjectId(list(mappings.book_mapping.keys())[list(mappings.book_mapping.values()).index(ind)]) for ind in indxs]
     result_books=Book.objects.filter(__raw__={"_id":{"$in":pred_books}})
     return result_books
-    
+
 def search_books(name,id=None):
     s = LibgenSearch()
     if id is None:
@@ -85,6 +104,7 @@ def search_books(name,id=None):
             img=soup.findAll('img')[0].get('src')
             r['image']="http://library.lol/"+img
         return results
+    print("name which's query:",name)
     r=s.search_title_filtered(name,{"ID":id})[0]
     r['query']=name
     page = requests.get(r['Mirror_1'])
@@ -93,14 +113,8 @@ def search_books(name,id=None):
     r['image']="http://library.lol/"+img
     return r
 
-def printreq(req):
-    print('{}\n{}\r\n{}\r\n\r\n{}'.format(
-        '-----------START-----------',
-        req.method + ' ' ,
-        '\r\n'.join('{}: {}'.format(k, v) for k, v in req.headers.items()),
-        req.body,
-    ))
-
+def generate_session_id(user):
+    return blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
 
 
 def save_books(rating):
@@ -116,9 +130,6 @@ def save_books(rating):
         book.save()
         book.reload()
         return book
-
-
-
 
 def is_authenticated(request):
     try:
@@ -155,21 +166,13 @@ def update_rating(request):
                 user.ratings.append(Rating.from_json(dumps({'ID':book.id,'rating':float(rating)})))
                 user.save()
             return HttpResponse("rating added",status=200)
-        return HttpResponse("Book wasn't added to user rating.",status=400)
+        return HttpResponse("rating wasn't added.",status=400)
 
 def get_times_suggestions_used(request):
     if request.method == 'GET':
         mapping=Mapping.objects.first()
         return HttpResponse(dumps({"history":[h.to_mongo().to_dict() for h in mapping.history]}),status=200)
 
-def remove_rating(request):
-    if request.method == 'POST':
-        user=is_authenticated(request)
-        book=request.POST.get('id')
-        if user==None: return HttpResponse("Session timed out.",status=440)
-        if book:
-
-            return HttpResponse("Book removed from user ratings",status=200)
 
 
 def getBooks(request):
@@ -210,6 +213,7 @@ def getUser(request):
         user=is_authenticated(request)
         if user is None: return HttpResponse('session expired',status=440)
         else:
+            print(request.POST.keys())
             for key in User._fields.keys():
                 if request.POST.get(key) is not None:
                     user[key]=request.POST[key]
@@ -243,7 +247,7 @@ def LoginView(request):
         password = request.POST.get('password')
         try:
             user=User.objects.get( __raw__= {'username':username,'password':password} )
-            session_id=blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
+            session_id=generate_session_id(user)
             user.session=Session(session_id=session_id)
             user.birthday=datetime.now()
             user.save()
@@ -263,8 +267,8 @@ def RegisterView(request):
         sexe=request.POST.get('sexe')
         genres=request.POST.get('genres')
         try:
-            user = User(username=username, password=password,email=email,birthday=birthday,sexe=sexe,genres=genres)
-            session_id=blake3(user.username.encode('utf-8')+user.password.encode('utf-8')+datetime.now().strftime("%m/%d/%Y--%H:%M:%S").encode('utf-8')).hexdigest()
+            user = User(username=username,first_name=first_name,last_name=last_name, password=password,email=email,birthday=birthday,sexe=sexe,genres=genres)
+            session_id=generate_session_id(user)
             user.session=Session(session_id=session_id)
             user.save()
             return HttpResponse(user.session.to_json(),status=200)

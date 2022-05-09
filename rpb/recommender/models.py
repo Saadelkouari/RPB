@@ -43,3 +43,13 @@ class Mapping(Document):
     user_mapping=DictField()
     book_mapping=DictField()
     history=ListField(EmbeddedDocumentField(History))
+
+
+class Message(EmbeddedDocument):
+    value=StringField(max_length=500,required=True)
+    sender=ReferenceField(User,required=True)
+    time=DateTimeField(required=True,default=datetime.now())
+
+class Chat(Document):
+    messages=ListField(EmbeddedDocumentField(Message))
+    chat_label=IntField(required=True)
